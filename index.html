@@ -12,8 +12,12 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
 .hd h2 { margin:0; font-size:19px; font-weight:700; }
 .ts { font-size:12px; color:#6b7280; margin-top:4px; }
 .banner { background:#FFD400; padding:10px 16px; font-weight:700; text-transform:uppercase; border-bottom:1px solid #eee; }
-.refresh { background:#005CA9; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; }
-.refresh:hover { background:#004B8A; }
+
+.controls { display:flex; gap:8px; align-items:center; padding:8px 16px; border-bottom:1px solid #eee; flex-wrap:wrap; }
+.btn { background:#005CA9; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+.btn:hover { background:#004B8A; }
+.btn-secondary { background:#374151; }
+.btn-secondary:hover { background:#1f2937; }
 
 .note { padding:10px 16px; color:#6b7280; font-size:12px; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
 .total { background:#fafafa; font-weight:700; }
@@ -57,6 +61,12 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
 
   <div id="banner" class="banner">ASIGNACIÓN DE 5 ESCAÑOS — MÉTODO D’HONDT</div>
 
+  <div class="controls">
+    <button id="toggleBtn" class="btn btn-secondary" title="Ver solo los posibles electos">👥 Ver posibles electos</button>
+    <button id="refreshBtn" class="btn" title="Actualizar ahora">🔄 Actualizar</button>
+    <span id="hint" style="font-size:12px; color:#6b7280;">Electos ordenados por mayor votación individual</span>
+  </div>
+
   <div id="rows"></div>
 
   <div class="row total">
@@ -68,7 +78,7 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
 
   <div class="note">
     <div id="footnote">Actualiza cada 60 s · Fuente: Google Sheets</div>
-    <button id="refreshBtn" class="refresh" title="Actualizar ahora">🔄 Actualizar</button>
+    <div id="tsBottom"></div>
   </div>
 </div>
 
@@ -76,29 +86,24 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
 const DATA_URL="https://docs.google.com/spreadsheets/d/1lFbOXepc2zPXOUIOhTRnP4q9Ry_oye_9zHJ1HX_9Njc/export?format=csv";
 const REFRESH_MS=60000;
 
+let showElectedOnly = false; // estado del toggle
+
 /* Colores por pacto/candidato (agrega pactos para colores propios si quieres) */
-const candidateColorMap={
-  "Voto nulo / blanco":"#999999"
-};
+const candidateColorMap={ "Voto nulo / blanco":"#999999" };
 function setPartyColor(party, color){ if (party && color) candidateColorMap[party]=color; }
-function colorForRow(r){
-  if (candidateColorMap[r.candidate]) return candidateColorMap[r.candidate];
-  if (candidateColorMap[r.party]) return candidateColorMap[r.party];
-  return "#6b7280";
-}
+function colorForRow(r){ return candidateColorMap[r.candidate]||candidateColorMap[r.party]||"#6b7280"; }
 function formatInt(n){ return (n||0).toLocaleString("es-CL"); }
 function nowStamp(){ const d=new Date(); return d.toLocaleString("es-CL",{dateStyle:"medium",timeStyle:"short"}); }
 
-/* Parseo robusto de votos (1.234.567 / 1 234 567 / 1,234,567) */
+/* Parseo robusto de votos */
 function parseVotes(x){
   if (x==null) return 0;
-  const s=String(x).trim();
-  if (!s) return 0;
+  const s=String(x).trim(); if (!s) return 0;
   const onlyDigits=s.replace(/[^\d]/g,"");
   return onlyDigits? Number(onlyDigits) : 0;
 }
 
-/* CSV simple (si tu hoja trae comillas complejas, avísame y cambio el parser) */
+/* CSV simple */
 function parseCSV(text){
   const lines=text.trim().split(/\r?\n/);
   const headers=lines.shift().split(",").map(h=>h.trim());
@@ -113,18 +118,16 @@ function parseCSV(text){
 }
 
 /* Detectores */
-function isNullBlanco(r){
-  return (r.candidate||"").toLowerCase().includes("voto nulo");
-}
+function isNullBlanco(r){ return (r.candidate||"").toLowerCase().includes("voto nulo"); }
 function isListHeader(r){
   const name=(r.candidate||"").toLowerCase();
   const party=(r.party||"").toLowerCase();
   return name.includes("lista") || party.includes("lista");
 }
 
-/* D’Hondt exacto (V/1..V/SEATS; top SEATS cocientes) — cuenta solo candidatos reales agrupados por party */
+/* D’Hondt exacto: V/1..V/SEATS con votos sumados por lista */
 function dhondtAllocate(rows, SEATS){
-  // Sumar votos por lista (party) usando solo candidatos, excluyendo nulo/blanco y "Lista ..."
+  // Sumar votos por lista (party) usando solo candidatos reales
   const partyVotes = {};
   rows.forEach(r=>{
     if (!isNullBlanco(r) && !isListHeader(r) && r.party){
@@ -136,7 +139,7 @@ function dhondtAllocate(rows, SEATS){
   const totalVotesAll = parties.reduce((a,p)=>a+partyVotes[p],0);
   if (totalVotesAll===0) return {partySeats:{}, seatWinners:[]};
 
-  // Construir cocientes V/k para cada party
+  // Cocientes
   const quotients = [];
   parties.forEach(p=>{
     const V = partyVotes[p];
@@ -145,7 +148,7 @@ function dhondtAllocate(rows, SEATS){
     }
   });
 
-  // Ordenar por q desc; desempates: mayor V base; luego nombre de party (estable)
+  // Orden estricta por q desc; desempate: mayor V base, luego nombre party
   quotients.sort((a,b)=> b.q - a.q || b.baseVotes - a.baseVotes || (a.party>b.party?1:-1));
   const top = quotients.slice(0, SEATS);
 
@@ -153,7 +156,7 @@ function dhondtAllocate(rows, SEATS){
   const partySeats = {};
   top.forEach(x=>{ partySeats[x.party] = (partySeats[x.party]||0) + 1; });
 
-  // Ganadores: dentro de cada party, los n más votados (n = escaños asignados a esa party)
+  // Ganadores: dentro de cada party, los n más votados (n = escaños asignados)
   const seatWinners = [];
   Object.keys(partySeats).forEach(p=>{
     const n = partySeats[p];
@@ -162,17 +165,16 @@ function dhondtAllocate(rows, SEATS){
     inParty.slice(0, n).forEach(r=> seatWinners.push(r.candidate));
   });
 
-  return { partySeats, seatWinners };
+  return { partySeats, seatWinners, partyVotes, quotients, top };
 }
 
-/* Render */
+/* Render general con soporte para modo "electos" */
 function render(rows){
-  // Extrae “Voto nulo / blanco”, detecta headers de lista
   const blanco = rows.find(isNullBlanco);
   const candidates = rows.filter(r=>!isNullBlanco(r) && !isListHeader(r));
   const allZero = candidates.length>0 && candidates.every(r=>(+r.votes||0)===0 && (+r.percent||0)===0);
 
-  // D’Hondt: 5 escaños exactos
+  // D’Hondt: 5 escaños
   const SEATS = 5;
   const { partySeats, seatWinners } = dhondtAllocate(rows, SEATS);
 
@@ -183,74 +185,107 @@ function render(rows){
   // Banner visible solo si hay votos
   document.getElementById("banner").style.display = allZero ? "none" : "block";
 
-  // Pintar respetando el ORDEN de la hoja (encabezados “Lista …” se muestran, no cuentan)
-  rows.forEach(r=>{
-    if (isNullBlanco(r)) return; // lo pintamos al final, antes del total
+  if (showElectedOnly){
+    // Vista SOLO electos, ordenados por mayor votación individual
+    const electedRows = candidates
+      .filter(r=> seatWinners.includes(r.candidate))
+      .sort((a,b)=>(b.votes||0)-(a.votes||0) || (b.percent||0)-(a.percent||0));
 
-    // Encabezado de Lista (fijo, sin barra)
-    if (isListHeader(r)) {
+    electedRows.forEach(r=>{
+      total += (r.votes||0);
+      const color = colorForRow(r);
+      const pct = Math.max(0, Math.min(100, Number(r.percent)||0));
+      const photo = r.photo ? `<img src="${r.photo}" alt="${r.candidate}" class="photo"/>` : "";
       rowsDiv.innerHTML += `
-        <div class="row list-header">
-          <div class="name-side">${r.candidate||r.party||"Lista"}</div>
-          <div class="stats-side">${r.party? r.party : ""}</div>
-        </div>`;
-      return;
-    }
-
-    // Candidato normal
-    const color = colorForRow(r);
-    const pct = Math.max(0, Math.min(100, Number(r.percent)||0));
-    const isElected = !allZero && seatWinners.includes(r.candidate);
-    total += (r.votes||0);
-    const photo = r.photo ? `<img src="${r.photo}" alt="${r.candidate}" class="photo"/>` : "";
-
-    rowsDiv.innerHTML += `
-      <div class="row${isElected?" winner":""}">
-        <div class="name-side">
-          ${photo}
-          <div>
-            <div style="font-weight:${isElected?"700":"500"};">
-              ${r.candidate||""}
-              ${isElected?`<span class="chip-electo">✓ Electo (D’Hondt)</span>`:""}
+        <div class="row winner">
+          <div class="name-side">
+            ${photo}
+            <div>
+              <div style="font-weight:700;">
+                ${r.candidate||""}
+                ${!allZero?`<span class="chip-electo">✓ Electo (D’Hondt)</span>`:""}
+              </div>
+              <div><span class="party-badge" style="background:${color};">${r.party||"—"}</span></div>
             </div>
-            <div><span class="party-badge" style="background:${color};">${r.party||"—"}</span></div>
           </div>
-        </div>
-        <div class="stats-side">
-          ${r.votes?formatInt(r.votes):"—"}
-          <div class="bar-group">
-            <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
-            <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
+          <div class="stats-side">
+            ${r.votes?formatInt(r.votes):"—"}
+            <div class="bar-group">
+              <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
+              <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
+            </div>
           </div>
-        </div>
-      </div>`;
-  });
+        </div>`;
+    });
 
-  // “Voto nulo / blanco” SIEMPRE antes del total (no participa de D’Hondt)
-  if (blanco){
-    const color = colorForRow(blanco);
-    const pct = Math.max(0, Math.min(100, Number(blanco.percent)||0));
-    rowsDiv.innerHTML += `
-      <div class="row">
-        <div class="name-side">
-          <div style="font-weight:500;">${blanco.candidate}</div>
-          <div><span class="party-badge" style="background:${color};">${blanco.party||"—"}</span></div>
-        </div>
-        <div class="stats-side">
-          ${blanco.votes?formatInt(blanco.votes):"—"}
-          <div class="bar-group">
-            <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
-            <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
+    // En modo electos NO mostramos “Voto nulo / blanco” ni encabezados de Lista
+  } else {
+    // Vista completa: respetar ORDEN de la hoja (muestra headers "Lista ...")
+    rows.forEach(r=>{
+      if (isNullBlanco(r)) return; // lo pintamos después
+      if (isListHeader(r)) {
+        rowsDiv.innerHTML += `
+          <div class="row list-header">
+            <div class="name-side">${r.candidate||r.party||"Lista"}</div>
+            <div class="stats-side">${r.party? r.party : ""}</div>
+          </div>`;
+        return;
+      }
+      const color = colorForRow(r);
+      const pct = Math.max(0, Math.min(100, Number(r.percent)||0));
+      const isElected = !allZero && seatWinners.includes(r.candidate);
+      total += (r.votes||0);
+      const photo = r.photo ? `<img src="${r.photo}" alt="${r.candidate}" class="photo"/>` : "";
+      rowsDiv.innerHTML += `
+        <div class="row${isElected?" winner":""}">
+          <div class="name-side">
+            ${photo}
+            <div>
+              <div style="font-weight:${isElected?"700":"500"};">
+                ${r.candidate||""}
+                ${isElected?`<span class="chip-electo">✓ Electo (D’Hondt)</span>`:""}
+              </div>
+              <div><span class="party-badge" style="background:${color};">${r.party||"—"}</span></div>
+            </div>
           </div>
-        </div>
-      </div>`;
+          <div class="stats-side">
+            ${r.votes?formatInt(r.votes):"—"}
+            <div class="bar-group">
+              <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
+              <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
+            </div>
+          </div>
+        </div>`;
+    });
+
+    // “Voto nulo / blanco” SIEMPRE antes del total (no participa de D’Hondt)
+    if (blanco){
+      const color = colorForRow(blanco);
+      const pct = Math.max(0, Math.min(100, Number(blanco.percent)||0));
+      rowsDiv.innerHTML += `
+        <div class="row">
+          <div class="name-side">
+            <div style="font-weight:500;">${blanco.candidate}</div>
+            <div><span class="party-badge" style="background:${color};">${blanco.party||"—"}</span></div>
+          </div>
+          <div class="stats-side">
+            ${blanco.votes?formatInt(blanco.votes):"—"}
+            <div class="bar-group">
+              <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
+              <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
+            </div>
+          </div>
+        </div>`;
+    }
   }
 
-  // Total de votos
+  // Totales y timestamps
   document.getElementById("totalVotes").textContent = total?formatInt(total):"—";
-  document.getElementById("ts").textContent = "Actualizado: " + nowStamp();
+  const stamp = "Actualizado: " + nowStamp();
+  document.getElementById("ts").textContent = stamp;
+  document.getElementById("tsBottom").textContent = stamp;
 
-  // Resumen de escaños por LISTA (pacto)
+  // Resumen de escaños por LISTA
   const seatsDiv=document.getElementById("seats");
   seatsDiv.innerHTML="";
   if (Object.keys(partySeats).length===0){
@@ -293,11 +328,28 @@ async function load(){
     document.getElementById("footnote").textContent="Error cargando CSV (revisa permisos o gid de la hoja).";
   }
 }
+
+/* Botones */
 document.getElementById("refreshBtn").addEventListener("click",()=>{
   const btn=document.getElementById("refreshBtn");
+  const tb=document.getElementById("toggleBtn");
   btn.textContent="⏳ Actualizando...";
-  load().then(()=>btn.textContent="🔄 Actualizar");
+  btn.disabled=true; tb.disabled=true;
+  load().then(()=>{
+    btn.textContent="🔄 Actualizar";
+    btn.disabled=false; tb.disabled=false;
+  });
 });
+
+document.getElementById("toggleBtn").addEventListener("click",()=>{
+  showElectedOnly = !showElectedOnly;
+  const tb=document.getElementById("toggleBtn");
+  tb.textContent = showElectedOnly ? "🔙 Volver a ver todas las listas" : "👥 Ver posibles electos";
+  // Re-render con el estado actual y datos ya cargados
+  // Para evitar refetch innecesario, obtenemos el DOM actual y lo reusamos:
+  fetchCSV(DATA_URL).then(parseCSV).then(rows=>render(rows)).catch(()=>{});
+});
+
 load();
 setInterval(load, REFRESH_MS);
 </script>
