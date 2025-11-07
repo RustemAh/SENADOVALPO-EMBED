@@ -1,219 +1,71 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Resultados Regional — Valparaíso 2025</title>
-<style>
-:root { color-scheme: light; }
-body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
-.wrap { max-width:720px; margin:0 auto; border:1px solid #ddd; border-radius:10px; overflow:hidden; }
-.hd { padding:14px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; flex-wrap:wrap; align-items:center; }
-.hd h2 { margin:0; font-size:19px; font-weight:700; }
-.ts { font-size:12px; color:#6b7280; margin-top:4px; }
-.banner { background:#FFD400; padding:10px 16px; font-weight:700; text-transform:uppercase; border-bottom:1px solid #eee; }
-
-.controls { display:flex; gap:8px; align-items:center; padding:8px 16px; border-bottom:1px solid #eee; flex-wrap:wrap; }
-.btn { background:#005CA9; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; }
-.btn:hover { background:#004B8A; }
-.btn-secondary { background:#374151; }
-.btn-secondary:hover { background:#1f2937; }
-
-.note { padding:10px 16px; color:#6b7280; font-size:12px; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
-.total { background:#fafafa; font-weight:700; }
-.winner { background:#F3F8FF; }
-.chip-electo { display:inline-flex; align-items:center; gap:4px; background:#FFD400; color:#000; border-radius:6px; padding:2px 6px; font-size:11px; font-weight:700; margin-left:6px; }
-
-.row { border-top:1px solid #eee; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }
-.name-side { flex:1 1 60%; display:flex; align-items:center; gap:8px; }
-.stats-side { flex:1 1 40%; text-align:right; font-size:13px; color:#333; }
-
-.photo { width:36px; height:36px; border-radius:50%; object-fit:cover; border:1px solid #ddd; flex-shrink:0; }
-.party-badge { display:inline-block; min-width:28px; text-align:center; color:#fff; border-radius:4px; padding:3px 7px; font-weight:700; background:#6b7280; font-size:13px; }
-.bar-group { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:4px; }
-.bar-rail { width:100%; max-width:120px; height:8px; background:#e5e7eb; border-radius:6px; overflow:hidden; }
-.bar-fill { height:8px; border-radius:6px; }
-
-.list-header { background:#f9fafb; color:#111; font-weight:700; border-top:2px solid #ddd; }
-.list-header .stats-side { color:#9ca3af; }
-
-.seats-wrap { padding:10px 16px; border-top:1px solid #eee; font-size:13px; color:#333; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-.seat-pill { display:inline-flex; align-items:center; gap:6px; border:1px solid #ddd; border-radius:999px; padding:4px 10px; }
-.seat-dot { width:10px; height:10px; border-radius:50%; background:#6b7280; display:inline-block; }
-.seat-count { font-weight:700; }
-
-@media (max-width:480px) {
-  .photo { width:30px; height:30px; }
-  .hd h2 { font-size:17px; }
-  .party-badge { padding:2px 6px; font-size:12px; }
-  .bar-group { flex-direction:row-reverse; gap:6px; justify-content:flex-end; }
-}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <div class="hd">
-    <div>
-      <h2>Elección Regional — Valparaíso 2025</h2>
-      <div class="ts" id="ts">—</div>
-    </div>
-  </div>
-
-  <div id="banner" class="banner">ASIGNACIÓN DE 5 ESCAÑOS — MÉTODO D’HONDT (por lista; mostrado por partido)</div>
-
-  <div class="controls">
-    <button id="toggleBtn" class="btn btn-secondary">👥 Ver posibles electos</button>
-    <button id="refreshBtn" class="btn">🔄 Actualizar</button>
-    <span style="font-size:12px;color:#6b7280;">Electos ordenados por mayor votación individual</span>
-  </div>
-
-  <div id="rows"></div>
-
-  <div class="row total">
-    <div style="font-weight:600;color:#6b7280;">Total votos válidos</div>
-    <div id="totalVotes" style="font-weight:600;">—</div>
-  </div>
-
-  <div id="seats" class="seats-wrap"></div>
-
-  <div class="note">
-    <div id="footnote">Actualiza cada 60 s · Fuente: Google Sheets</div>
-    <div id="tsBottom"></div>
-  </div>
-</div>
-
 <script>
 const DATA_URL="https://docs.google.com/spreadsheets/d/1lFbOXepc2zPXOUIOhTRnP4q9Ry_oye_9zHJ1HX_9Njc/export?format=csv";
 const REFRESH_MS=60000;
-let showElectedOnly=false;
 
-const colorMap={ "Voto nulo / blanco":"#999999" };
-function setColor(k,c){ if(k) colorMap[k]=c; }
-function colorForRow(r){ return colorMap[candidate(r)]||colorMap[listKey(r)]||colorMap[party(r)]||"#6b7280"; }
-function formatInt(n){ return (n||0).toLocaleString("es-CL"); }
-function nowStamp(){ return new Date().toLocaleString("es-CL",{dateStyle:"medium",timeStyle:"short"}); }
+const listaImages = {
+  "Lista B. Verdes Regionalistas y Humanistas": "https://upload.wikimedia.org/wikipedia/commons/5/59/Logo_PVH.png",
+  "Lista C. Unidad por Chile": "https://upload.wikimedia.org/wikipedia/commons/8/8a/Logo_Unidad_por_Chile.png",
+  "Lista I. Partido de la Gente": "https://upload.wikimedia.org/wikipedia/commons/7/76/Logo_PDG.png",
+  "Lista J. Chile Grande y Unido": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Logo_UDI.png",
+  "Lista K. Cambio por Chile": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Logo_RN.png"
+};
 
-function parseVotes(x){ return +String(x||"0").replace(/[^\d]/g,"")||0; }
-function parseCSV(t){
-  const l=t.trim().split(/\r?\n/); const h=l.shift().split(",").map(s=>s.trim().toLowerCase());
-  return l.filter(x=>x.trim()).map(line=>{
-    const c=line.split(",").map(x=>x.trim()), o={};
-    h.forEach((hh,i)=>o[hh]=c[i]||"");
-    o.votes=parseVotes(o.votes); o.percent=o.percent?+String(o.percent).replace(","," .")||0:0;
-    return o;
+function cleanListName(name){
+  return String(name||"")
+    .replace(/\n/g," ")
+    .replace(/^["“”']+|["“”']+$/g,"")
+    .trim();
+}
+
+function parseCSV(text){
+  const clean=text.replace(/\r/g,"").replace(/\n{2,}/g,"\n");
+  const lines=clean.trim().split("\n");
+  const headers=lines.shift().split(",").map(h=>h.trim().toLowerCase());
+  return lines.map(line=>{
+    const cols=line.split(",");
+    const obj={};
+    headers.forEach((h,i)=>obj[h]=cols[i]?.trim()||"");
+    return obj;
   });
 }
 
-function get(r,n){ for(const x of n) if(r[x]) return String(r[x]).trim(); return ""; }
-function candidate(r){return get(r,["candidate","candidato","nombre"]); }
-function party(r){return get(r,["party","partido"]); }
-function lista(r){return get(r,["lista","pacto","coalition","bloque","alianza","list","bloc"]); }
-
-function isNullBlanco(r){return (candidate(r)||"").toLowerCase().includes("voto nulo");}
-function isListHeader(r){
-  const n=(candidate(r)||"").toLowerCase(), p=(party(r)||"").toLowerCase(), l=(lista(r)||"").toLowerCase();
-  return n.startsWith("lista ")||n.includes(" lista ")||p.startsWith("lista ")||l.startsWith("lista ");
+async function fetchCSV(url){
+  const r=await fetch(url+"?t="+Date.now(),{cache:"no-store"});
+  return await r.text();
 }
 
-function extractListCode(s){const m=String(s||"").trim().match(/^([A-ZÁÉÍÓÚÑ])\./);return m?m[1].toUpperCase():"";}
-function listKey(r){
-  const l=lista(r), c=extractListCode(l); if(c)return c;
-  if(l)return l; const p=party(r), cp=extractListCode(p); if(cp)return cp;
-  return p||"";
+function renderListHeader(name){
+  const listName = cleanListName(name);
+  const logo = listaImages[listName] || "https://upload.wikimedia.org/wikipedia/commons/9/9a/Gray_circle.png";
+  return `
+    <div class="row list-header" style="display:flex;align-items:center;gap:10px;">
+      <img src="${logo}" alt="${listName}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;border:1px solid #ccc;">
+      <div style="font-weight:700;font-size:15px;color:#111;">${listName}</div>
+    </div>
+  `;
 }
 
-function dhondt(rows,S){
-  const valid=rows.filter(r=>!isNullBlanco(r)&&!isListHeader(r)&&listKey(r));
-  const byList={}; valid.forEach(r=>byList[listKey(r)]=(byList[listKey(r)]||0)+(r.votes||0));
-  const q=[]; Object.keys(byList).forEach(L=>{for(let k=1;k<=S;k++)q.push({L,q:byList[L]/k});});
-  q.sort((a,b)=>b.q-a.q); const top=q.slice(0,S);
-  const seats={}; top.forEach(x=>seats[x.L]=(seats[x.L]||0)+1);
-  const winners=[];
-  for(const L in seats){
-    const n=seats[L];
-    const arr=valid.filter(r=>listKey(r)===L).sort((a,b)=>(b.votes||0)-(a.votes||0));
-    arr.slice(0,n).forEach(r=>winners.push(candidate(r)));
-  }
-  return {seats,winners};
-}
-
-function seatsByParty(rows,winners){
-  const counts={};
+async function load(){
+  const csv=await fetchCSV(DATA_URL);
+  const rows=parseCSV(csv);
+  const container=document.getElementById("rows");
+  container.innerHTML="";
   rows.forEach(r=>{
-    if(winners.includes(candidate(r))){
-      const p=party(r)||"—";
-      counts[p]=(counts[p]||0)+1;
-    }
-  });
-  return counts;
-}
-
-function render(rows){
-  const blanco=rows.find(isNullBlanco);
-  const cand=rows.filter(r=>!isNullBlanco(r)&&!isListHeader(r));
-  const allZero=cand.length>0&&cand.every(r=>(r.votes||0)===0);
-  const {seats,winners}=dhondt(rows,5);
-  const pSeats=seatsByParty(rows,winners);
-  const rowsDiv=document.getElementById("rows"); rowsDiv.innerHTML="";
-  let total=0;
-
-  const renderRow=(r,elect=false)=>{
-    const color=colorForRow(r); const pct=Math.max(0,Math.min(100,+r.percent||0));
-    const photo=r.photo?`<img src="${r.photo}" class="photo">`:"";
-    rowsDiv.innerHTML+=`
-      <div class="row${elect?" winner":""}">
-        <div class="name-side">${photo}
-          <div><div style="font-weight:${elect?"700":"500"};">${candidate(r)}${elect?'<span class="chip-electo">✓ Electo (D’Hondt)</span>':""}</div>
-          <div><span class="party-badge" style="background:${color};">${party(r)||"—"}</span></div></div>
-        </div>
-        <div class="stats-side">${r.votes?formatInt(r.votes):"—"}
-          <div class="bar-group"><div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div></div>
-        </div>
-      </div>`;}
-
-  rows.forEach(r=>{
-    if(isNullBlanco(r))return;
-    if(isListHeader(r)){
-      const name=(candidate(r)||"Lista")
-        .replace(/^["“”']+|["“”']+$/g,"")  // elimina cualquier tipo de comillas
-        .trim();
-      rowsDiv.innerHTML+=`
-        <div class="row list-header">
-          <div class="name-side"><div style="font-weight:700;font-size:15px;color:#111;">${name}</div></div>
-          <div class="stats-side"></div>
+    const name=r.candidate||r.nombre||"";
+    if(name.toLowerCase().includes("lista")){
+      container.innerHTML+=renderListHeader(name);
+    } else {
+      // mostrar candidatos (simplificado)
+      container.innerHTML+=`
+        <div class="row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-top:1px solid #eee;">
+          <div style="font-weight:500;">${r.candidate}</div>
+          <div style="color:#555;">${r.votes||"—"}</div>
         </div>`;
-      return;
     }
-    const elected=!allZero&&winners.includes(candidate(r)); total+=r.votes; renderRow(r,elected);
   });
-  if(blanco)renderRow(blanco,false);
-
-  document.getElementById("totalVotes").textContent=total?formatInt(total):"—";
-  const s="Actualizado: "+nowStamp();
-  document.getElementById("ts").textContent=s;
-  document.getElementById("tsBottom").textContent=s;
-
-  const seatsDiv=document.getElementById("seats"); seatsDiv.innerHTML="";
-  const parties=Object.keys(pSeats);
-  if(!parties.length){seatsDiv.textContent="Sin asignación de escaños.";}
-  else{
-    seatsDiv.innerHTML="<div style='font-weight:700;'>D’Hondt (5 escaños) — por partido</div>";
-    parties.sort((a,b)=>(pSeats[b]||0)-(pSeats[a]||0)).forEach(p=>{
-      const c=colorMap[p]||"#6b7280";
-      seatsDiv.innerHTML+=`<span class="seat-pill"><span class="seat-dot" style="background:${c};"></span><b>${p}</b><span class="seat-count">${pSeats[p]}</span></span>`;
-    });
-  }
 }
 
-async function fetchCSV(u){const r=await fetch(u+(u.includes("?")?"&":"?")+"t="+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error("No CSV");return await r.text();}
-async function load(){const t=await fetchCSV(DATA_URL);render(parseCSV(t));}
-
-document.getElementById("refreshBtn").addEventListener("click",()=>{load();});
-document.getElementById("toggleBtn").addEventListener("click",()=>{showElectedOnly=!showElectedOnly;load();});
-
-load(); setInterval(load,REFRESH_MS);
+load();
+setInterval(load, REFRESH_MS);
 </script>
-</body>
-</html>
-
 
