@@ -76,7 +76,7 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
 const DATA_URL="https://docs.google.com/spreadsheets/d/1lFbOXepc2zPXOUIOhTRnP4q9Ry_oye_9zHJ1HX_9Njc/export?format=csv";
 const REFRESH_MS=60000;
 
-/* Colores por lista/candidato (agrega pactos si quieres color propio) */
+/* Colores por pacto/candidato (agrega pactos para colores propios si quieres) */
 const candidateColorMap={
   "Voto nulo / blanco":"#999999"
 };
@@ -122,36 +122,38 @@ function isListHeader(r){
   return name.includes("lista") || party.includes("lista");
 }
 
-/* D’Hondt: cuenta solo candidatos reales (no “Lista …”, no nulo/blanco) */
+/* D’Hondt exacto (V/1..V/SEATS; top SEATS cocientes) — cuenta solo candidatos reales agrupados por party */
 function dhondtAllocate(rows, SEATS){
-  const valid = rows.filter(r=>{
-    return !isNullBlanco(r) && !isListHeader(r) && r.party && (r.votes||0) > 0;
+  // Sumar votos por lista (party) usando solo candidatos, excluyendo nulo/blanco y "Lista ..."
+  const partyVotes = {};
+  rows.forEach(r=>{
+    if (!isNullBlanco(r) && !isListHeader(r) && r.party){
+      partyVotes[r.party] = (partyVotes[r.party]||0) + (r.votes||0);
+    }
   });
 
-  // Suma votos por lista (party)
-  const byParty = {};
-  valid.forEach(r=>{ byParty[r.party] = (byParty[r.party]||0) + (r.votes||0); });
-
-  const totalVotesAll = Object.values(byParty).reduce((a,b)=>a+b,0);
+  const parties = Object.keys(partyVotes);
+  const totalVotesAll = parties.reduce((a,p)=>a+partyVotes[p],0);
   if (totalVotesAll===0) return {partySeats:{}, seatWinners:[]};
 
-  // Cocientes V/k
+  // Construir cocientes V/k para cada party
   const quotients = [];
-  for (const party in byParty){
-    const V = byParty[party];
-    for (let k=1;k<=SEATS;k++){
-      quotients.push({ party, k, q: V / k, baseVotes: V });
+  parties.forEach(p=>{
+    const V = partyVotes[p];
+    for (let k=1; k<=SEATS; k++){
+      quotients.push({ party:p, k, q: V / k, baseVotes: V });
     }
-  }
-  // Orden por q desc; desempate: más votos base; luego nombre lista
+  });
+
+  // Ordenar por q desc; desempates: mayor V base; luego nombre de party (estable)
   quotients.sort((a,b)=> b.q - a.q || b.baseVotes - a.baseVotes || (a.party>b.party?1:-1));
   const top = quotients.slice(0, SEATS);
 
-  // Es-ca-ños por lista
+  // Escaños por party
   const partySeats = {};
   top.forEach(x=>{ partySeats[x.party] = (partySeats[x.party]||0) + 1; });
 
-  // Ganadores dentro de cada lista: top N por votos
+  // Ganadores: dentro de cada party, los n más votados (n = escaños asignados a esa party)
   const seatWinners = [];
   Object.keys(partySeats).forEach(p=>{
     const n = partySeats[p];
@@ -165,15 +167,12 @@ function dhondtAllocate(rows, SEATS){
 
 /* Render */
 function render(rows){
-  // Extrae “Voto nulo / blanco” y deja headers de lista para pintar como separadores
+  // Extrae “Voto nulo / blanco”, detecta headers de lista
   const blanco = rows.find(isNullBlanco);
   const candidates = rows.filter(r=>!isNullBlanco(r) && !isListHeader(r));
-  const listHeaders = rows.filter(isListHeader);
-
-  // ¿Todos en cero? (solo candidatos reales)
   const allZero = candidates.length>0 && candidates.every(r=>(+r.votes||0)===0 && (+r.percent||0)===0);
 
-  // D’Hondt (5 escaños)
+  // D’Hondt: 5 escaños exactos
   const SEATS = 5;
   const { partySeats, seatWinners } = dhondtAllocate(rows, SEATS);
 
@@ -184,11 +183,11 @@ function render(rows){
   // Banner visible solo si hay votos
   document.getElementById("banner").style.display = allZero ? "none" : "block";
 
-  // Pintado en el ORDEN de la hoja, respetando agrupación por “Lista …”
+  // Pintar respetando el ORDEN de la hoja (encabezados “Lista …” se muestran, no cuentan)
   rows.forEach(r=>{
-    if (isNullBlanco(r)) return; // lo renderizamos después, antes del total
+    if (isNullBlanco(r)) return; // lo pintamos al final, antes del total
 
-    // Encabezado de Lista
+    // Encabezado de Lista (fijo, sin barra)
     if (isListHeader(r)) {
       rowsDiv.innerHTML += `
         <div class="row list-header">
@@ -227,7 +226,7 @@ function render(rows){
       </div>`;
   });
 
-  // “Voto nulo / blanco” SIEMPRE antes del total (sin entrar en D’Hondt)
+  // “Voto nulo / blanco” SIEMPRE antes del total (no participa de D’Hondt)
   if (blanco){
     const color = colorForRow(blanco);
     const pct = Math.max(0, Math.min(100, Number(blanco.percent)||0));
@@ -247,7 +246,7 @@ function render(rows){
       </div>`;
   }
 
-  // Total
+  // Total de votos
   document.getElementById("totalVotes").textContent = total?formatInt(total):"—";
   document.getElementById("ts").textContent = "Actualizado: " + nowStamp();
 
@@ -282,7 +281,7 @@ async function load(){
     const text=await fetchCSV(DATA_URL);
     const rows=parseCSV(text);
 
-    // Si deseas colores por pacto fijos, define aquí (opcional):
+    // (Opcional) Colores fijos por pacto:
     // setPartyColor("Pacto A", "#005CA9");
     // setPartyColor("Pacto B", "#E5252A");
     // setPartyColor("Pacto C", "#27AE60");
@@ -304,3 +303,4 @@ setInterval(load, REFRESH_MS);
 </script>
 </body>
 </html>
+
