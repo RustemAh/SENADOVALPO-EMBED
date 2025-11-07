@@ -12,33 +12,9 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
 .hd h2 { margin:0; font-size:19px; font-weight:700; }
 .ts { font-size:12px; color:#6b7280; margin-top:4px; }
 .banner { background:#FFD400; padding:10px 16px; font-weight:700; text-transform:uppercase; border-bottom:1px solid #eee; }
-.controls { display:flex; gap:8px; align-items:center; padding:8px 16px; border-bottom:1px solid #eee; flex-wrap:wrap; }
-.btn { background:#005CA9; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; }
-.btn:hover { background:#004B8A; }
-.btn-secondary { background:#374151; }
-.btn-secondary:hover { background:#1f2937; }
-.note { padding:10px 16px; color:#6b7280; font-size:12px; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
-.total { background:#fafafa; font-weight:700; }
-.winner { background:#F3F8FF; }
-.row { border-top:1px solid #eee; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }
-.name-side { flex:1 1 60%; display:flex; align-items:center; gap:8px; }
-.stats-side { flex:1 1 40%; text-align:right; font-size:13px; color:#333; }
-.photo { width:36px; height:36px; border-radius:50%; object-fit:cover; border:1px solid #ddd; flex-shrink:0; }
-.party-badge { display:inline-block; min-width:28px; text-align:center; color:#fff; border-radius:4px; padding:3px 7px; font-weight:700; background:#6b7280; font-size:13px; }
-.bar-group { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:4px; }
-.bar-rail { width:100%; max-width:120px; height:8px; background:#e5e7eb; border-radius:6px; overflow:hidden; }
-.bar-fill { height:8px; border-radius:6px; }
-.list-header { background:#f9fafb; color:#111; font-weight:700; border-top:2px solid #ddd; padding:10px 16px; display:flex; align-items:center; gap:10px; }
-.seats-wrap { padding:10px 16px; border-top:1px solid #eee; font-size:13px; color:#333; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-.seat-pill { display:inline-flex; align-items:center; gap:6px; border:1px solid #ddd; border-radius:999px; padding:4px 10px; }
-.seat-dot { width:10px; height:10px; border-radius:50%; background:#6b7280; display:inline-block; }
-.seat-count { font-weight:700; }
-@media (max-width:480px) {
-  .photo { width:30px; height:30px; }
-  .hd h2 { font-size:17px; }
-  .party-badge { padding:2px 6px; font-size:12px; }
-  .bar-group { flex-direction:row-reverse; gap:6px; justify-content:flex-end; }
-}
+
+.list-header { background:#f9fafb; color:#111; font-weight:700; border-top:2px solid #ddd; padding:10px 16px; }
+.list-header .stats-side { color:#9ca3af; }
 </style>
 </head>
 <body>
@@ -49,97 +25,57 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
       <div class="ts" id="ts">—</div>
     </div>
   </div>
+
   <div id="banner" class="banner">ASIGNACIÓN DE 5 ESCAÑOS — MÉTODO D’HONDT (por lista; mostrado por partido)</div>
-  <div class="controls">
-    <button id="toggleBtn" class="btn btn-secondary">👥 Ver posibles electos</button>
-    <button id="refreshBtn" class="btn">🔄 Actualizar</button>
-  </div>
+
   <div id="rows"></div>
-  <div class="row total">
-    <div style="font-weight:600;color:#6b7280;">Total votos válidos</div>
-    <div id="totalVotes" style="font-weight:600;">—</div>
-  </div>
-  <div id="seats" class="seats-wrap"></div>
-  <div class="note">
-    <div id="footnote">Actualiza cada 60 s · Fuente: Google Sheets</div>
-    <div id="tsBottom"></div>
-  </div>
+
+  <script>
+  const DATA_URL="https://docs.google.com/spreadsheets/d/1lFbOXepc2zPXOUIOhTRnP4q9Ry_oye_9zHJ1HX_9Njc/export?format=csv";
+
+  async function fetchCSV(url){
+    const r=await fetch(url+"?t="+Date.now(),{cache:"no-store"});
+    return await r.text();
+  }
+
+  function parseCSV(text){
+    const clean=text.replace(/\r/g,"").replace(/\n{2,}/g,"\n");
+    const lines=clean.trim().split("\n");
+    const headers=lines.shift().split(",").map(h=>h.trim().toLowerCase());
+    return lines.map(line=>{
+      const cols=line.split(","); const obj={};
+      headers.forEach((h,i)=>obj[h]=cols[i]?.trim()||"");
+      return obj;
+    });
+  }
+
+  function cleanListName(name){
+    return String(name||"")
+      .replace(/\n/g," ")                   // elimina saltos de línea internos
+      .replace(/^["“”']+|["“”']+$/g,"")     // elimina comillas
+      .replace(/^lista\s*[A-ZÁÉÍÓÚÑ]\.\s*/i,"") // elimina "Lista B." o "Lista C."
+      .trim();
+  }
+
+  async function load(){
+    const csv=await fetchCSV(DATA_URL);
+    const rows=parseCSV(csv);
+    const container=document.getElementById("rows");
+    container.innerHTML="";
+    rows.forEach(r=>{
+      const name=r.candidate||r.nombre||"";
+      if(name.toLowerCase().includes("lista")){
+        const listName=cleanListName(name);
+        container.innerHTML+=`
+          <div class="list-header">${listName}</div>
+        `;
+      }
+    });
+  }
+
+  load();
+  </script>
 </div>
-
-<script>
-const DATA_URL="https://docs.google.com/spreadsheets/d/1lFbOXepc2zPXOUIOhTRnP4q9Ry_oye_9zHJ1HX_9Njc/export?format=csv";
-const REFRESH_MS=60000;
-const listaImages = {
-  "Lista B. Verdes Regionalistas y Humanistas": "https://upload.wikimedia.org/wikipedia/commons/5/59/Logo_PVH.png",
-  "Lista C. Unidad por Chile": "https://upload.wikimedia.org/wikipedia/commons/a/a3/Unidad_por_Chile.png",
-  "Lista I. Partido de la Gente": "https://upload.wikimedia.org/wikipedia/commons/7/76/Logo_PDG.png",
-  "Lista J. Chile Grande y Unido": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Logo_UDI.png",
-  "Lista K. Cambio por Chile": "https://upload.wikimedia.org/wikipedia/commons/f/f8/Logo_RN.png"
-};
-
-function cleanListName(name){
-  return String(name||"")
-    .replace(/\n/g," ")
-    .replace(/^["“”']+|["“”']+$/g,"")
-    .trim();
-}
-
-function parseCSV(text){
-  const clean=text.replace(/\r/g,"").replace(/\n{2,}/g,"\n");
-  const lines=clean.trim().split("\n");
-  const headers=lines.shift().split(",").map(h=>h.trim().toLowerCase());
-  return lines.map(line=>{
-    const cols=line.split(",");
-    const obj={};
-    headers.forEach((h,i)=>obj[h]=cols[i]?.trim()||"");
-    return obj;
-  });
-}
-
-async function fetchCSV(url){
-  const r=await fetch(url+"?t="+Date.now(),{cache:"no-store"});
-  return await r.text();
-}
-
-function renderListHeader(name){
-  const listName = cleanListName(name);
-  const logo = listaImages[listName] || "https://upload.wikimedia.org/wikipedia/commons/9/9a/Gray_circle.png";
-  return `
-    <div class="list-header">
-      <img src="${logo}" alt="${listName}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid #ccc;">
-      <div style="font-weight:700;font-size:15px;color:#111;">${listName}</div>
-    </div>
-  `;
-}
-
-async function load(){
-  const csv=await fetchCSV(DATA_URL);
-  const rows=parseCSV(csv);
-  const container=document.getElementById("rows");
-  container.innerHTML="";
-  let total=0;
-  rows.forEach(r=>{
-    const name=r.candidate||r.nombre||"";
-    if(name.toLowerCase().includes("lista")){
-      container.innerHTML+=renderListHeader(name);
-    } else {
-      total += parseInt(r.votes||0);
-      container.innerHTML+=`
-        <div class="row" style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-top:1px solid #eee;">
-          <div style="font-weight:500;">${r.candidate}</div>
-          <div style="color:#555;">${r.votes?Number(r.votes).toLocaleString("es-CL"):"—"}</div>
-        </div>`;
-    }
-  });
-  document.getElementById("totalVotes").textContent=total?total.toLocaleString("es-CL"):"—";
-  const s="Actualizado: "+new Date().toLocaleString("es-CL",{dateStyle:"medium",timeStyle:"short"});
-  document.getElementById("ts").textContent=s;
-  document.getElementById("tsBottom").textContent=s;
-}
-
-document.getElementById("refreshBtn").addEventListener("click",()=>{load();});
-load(); setInterval(load,REFRESH_MS);
-</script>
 </body>
 </html>
 
