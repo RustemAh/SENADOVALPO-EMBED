@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Resultados Regional — Valparaíso 2025 (D’Hondt)</title>
+<style>
+:root { color-scheme: light; }
+body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
+.wrap { max-width:720px; margin:0 auto; border:1px solid #ddd; border-radius:10px; overflow:hidden; }
+.hd { padding:14px 16px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; flex-wrap:wrap; align-items:center; }
+.hd h2 { margin:0; font-size:19px; font-weight:700; }
+.ts { font-size:12px; color:#6b7280; margin-top:4px; }
+.banner { background:#FFD400; padding:10px 16px; font-weight:700; text-transform:uppercase; border-bottom:1px solid #eee; }
+.refresh { background:#005CA9; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:13px; font-weight:600; cursor:pointer; }
+.refresh:hover { background:#004B8A; }
+
+.note { padding:10px 16px; color:#6b7280; font-size:12px; border-top:1px solid #eee; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+.total { background:#fafafa; font-weight:700; }
+.winner { background:#F3F8FF; }
+.chip-electo { display:inline-flex; align-items:center; gap:4px; background:#FFD400; color:#000; border-radius:6px; padding:2px 6px; font-size:11px; font-weight:700; margin-left:6px; }
+
+.row { border-top:1px solid #eee; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+.name-side { flex:1 1 60%; display:flex; align-items:center; gap:8px; }
+.stats-side { flex:1 1 40%; text-align:right; font-size:13px; color:#333; }
+
+.photo { width:36px; height:36px; border-radius:50%; object-fit:cover; border:1px solid #ddd; flex-shrink:0; }
+.party-badge { display:inline-block; min-width:28px; text-align:center; color:#fff; border-radius:4px; padding:3px 7px; font-weight:700; background:#6b7280; font-size:13px; }
+.bar-group { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:4px; }
+.bar-rail { width:100%; max-width:120px; height:8px; background:#e5e7eb; border-radius:6px; overflow:hidden; }
+.bar-fill { height:8px; border-radius:6px; }
+
+.list-header { background:#f3f4f6; color:#374151; font-weight:700; }
+.list-header .stats-side { color:#9ca3af; }
+
+.seats-wrap { padding:10px 16px; border-top:1px solid #eee; font-size:13px; color:#333; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.seat-pill { display:inline-flex; align-items:center; gap:6px; border:1px solid #ddd; border-radius:999px; padding:4px 10px; }
+.seat-dot { width:10px; height:10px; border-radius:50%; background:#6b7280; display:inline-block; }
+.seat-count { font-weight:700; }
+
+@media (max-width:480px) {
+  .photo { width:30px; height:30px; }
+  .hd h2 { font-size:17px; }
+  .party-badge { padding:2px 6px; font-size:12px; }
+  .bar-group { flex-direction:row-reverse; gap:6px; justify-content:flex-end; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <div>
+      <h2>Elección Regional — Valparaíso 2025</h2>
+      <div class="ts" id="ts">—</div>
+    </div>
+  </div>
+
+  <div id="banner" class="banner">ASIGNACIÓN DE 5 ESCAÑOS — MÉTODO D’HONDT</div>
+
+  <div id="rows"></div>
+
+  <div class="row total">
+    <div style="font-weight:600;color:#6b7280;">Total votos válidos</div>
+    <div id="totalVotes" style="font-weight:600;">—</div>
+  </div>
+
+  <div id="seats" class="seats-wrap" aria-live="polite"></div>
+
+  <div class="note">
+    <div id="footnote">Actualiza cada 60 s · Fuente: Google Sheets</div>
+    <button id="refreshBtn" class="refresh" title="Actualizar ahora">🔄 Actualizar</button>
+  </div>
+</div>
+
+<script>
+const DATA_URL="https://docs.google.com/spreadsheets/d/1lFbOXepc2zPXOUIOhTRnP4q9Ry_oye_9zHJ1HX_9Njc/export?format=csv";
+const REFRESH_MS=60000;
+
+/* Colores por lista/candidato (agrega pactos si quieres color propio) */
+const candidateColorMap={
+  "Voto nulo / blanco":"#999999"
+};
+function setPartyColor(party, color){ if (party && color) candidateColorMap[party]=color; }
+function colorForRow(r){
+  if (candidateColorMap[r.candidate]) return candidateColorMap[r.candidate];
+  if (candidateColorMap[r.party]) return candidateColorMap[r.party];
+  return "#6b7280";
+}
+function formatInt(n){ return (n||0).toLocaleString("es-CL"); }
+function nowStamp(){ const d=new Date(); return d.toLocaleString("es-CL",{dateStyle:"medium",timeStyle:"short"}); }
+
+/* Parseo robusto de votos (1.234.567 / 1 234 567 / 1,234,567) */
+function parseVotes(x){
+  if (x==null) return 0;
+  const s=String(x).trim();
+  if (!s) return 0;
+  const onlyDigits=s.replace(/[^\d]/g,"");
+  return onlyDigits? Number(onlyDigits) : 0;
+}
+
+/* CSV simple (si tu hoja trae comillas complejas, avísame y cambio el parser) */
+function parseCSV(text){
+  const lines=text.trim().split(/\r?\n/);
+  const headers=lines.shift().split(",").map(h=>h.trim());
+  return lines.filter(l=>l.trim().length>0).map(line=>{
+    const cols=line.split(",").map(c=>c.trim());
+    const obj={};
+    headers.forEach((h,i)=>obj[h]=cols[i]||"");
+    obj.votes=parseVotes(obj.votes);
+    obj.percent=obj.percent?Number(String(obj.percent).replace(",", ".")):0;
+    return obj;
+  });
+}
+
+/* Detectores */
+function isNullBlanco(r){
+  return (r.candidate||"").toLowerCase().includes("voto nulo");
+}
+function isListHeader(r){
+  const name=(r.candidate||"").toLowerCase();
+  const party=(r.party||"").toLowerCase();
+  return name.includes("lista") || party.includes("lista");
+}
+
+/* D’Hondt: cuenta solo candidatos reales (no “Lista …”, no nulo/blanco) */
+function dhondtAllocate(rows, SEATS){
+  const valid = rows.filter(r=>{
+    return !isNullBlanco(r) && !isListHeader(r) && r.party && (r.votes||0) > 0;
+  });
+
+  // Suma votos por lista (party)
+  const byParty = {};
+  valid.forEach(r=>{ byParty[r.party] = (byParty[r.party]||0) + (r.votes||0); });
+
+  const totalVotesAll = Object.values(byParty).reduce((a,b)=>a+b,0);
+  if (totalVotesAll===0) return {partySeats:{}, seatWinners:[]};
+
+  // Cocientes V/k
+  const quotients = [];
+  for (const party in byParty){
+    const V = byParty[party];
+    for (let k=1;k<=SEATS;k++){
+      quotients.push({ party, k, q: V / k, baseVotes: V });
+    }
+  }
+  // Orden por q desc; desempate: más votos base; luego nombre lista
+  quotients.sort((a,b)=> b.q - a.q || b.baseVotes - a.baseVotes || (a.party>b.party?1:-1));
+  const top = quotients.slice(0, SEATS);
+
+  // Es-ca-ños por lista
+  const partySeats = {};
+  top.forEach(x=>{ partySeats[x.party] = (partySeats[x.party]||0) + 1; });
+
+  // Ganadores dentro de cada lista: top N por votos
+  const seatWinners = [];
+  Object.keys(partySeats).forEach(p=>{
+    const n = partySeats[p];
+    const inParty = rows.filter(r=> r.party===p && !isNullBlanco(r) && !isListHeader(r));
+    inParty.sort((a,b)=>(b.votes||0)-(a.votes||0) || (b.percent||0)-(a.percent||0));
+    inParty.slice(0, n).forEach(r=> seatWinners.push(r.candidate));
+  });
+
+  return { partySeats, seatWinners };
+}
+
+/* Render */
+function render(rows){
+  // Extrae “Voto nulo / blanco” y deja headers de lista para pintar como separadores
+  const blanco = rows.find(isNullBlanco);
+  const candidates = rows.filter(r=>!isNullBlanco(r) && !isListHeader(r));
+  const listHeaders = rows.filter(isListHeader);
+
+  // ¿Todos en cero? (solo candidatos reales)
+  const allZero = candidates.length>0 && candidates.every(r=>(+r.votes||0)===0 && (+r.percent||0)===0);
+
+  // D’Hondt (5 escaños)
+  const SEATS = 5;
+  const { partySeats, seatWinners } = dhondtAllocate(rows, SEATS);
+
+  const rowsDiv=document.getElementById("rows");
+  rowsDiv.innerHTML="";
+  let total=0;
+
+  // Banner visible solo si hay votos
+  document.getElementById("banner").style.display = allZero ? "none" : "block";
+
+  // Pintado en el ORDEN de la hoja, respetando agrupación por “Lista …”
+  rows.forEach(r=>{
+    if (isNullBlanco(r)) return; // lo renderizamos después, antes del total
+
+    // Encabezado de Lista
+    if (isListHeader(r)) {
+      rowsDiv.innerHTML += `
+        <div class="row list-header">
+          <div class="name-side">${r.candidate||r.party||"Lista"}</div>
+          <div class="stats-side">${r.party? r.party : ""}</div>
+        </div>`;
+      return;
+    }
+
+    // Candidato normal
+    const color = colorForRow(r);
+    const pct = Math.max(0, Math.min(100, Number(r.percent)||0));
+    const isElected = !allZero && seatWinners.includes(r.candidate);
+    total += (r.votes||0);
+    const photo = r.photo ? `<img src="${r.photo}" alt="${r.candidate}" class="photo"/>` : "";
+
+    rowsDiv.innerHTML += `
+      <div class="row${isElected?" winner":""}">
+        <div class="name-side">
+          ${photo}
+          <div>
+            <div style="font-weight:${isElected?"700":"500"};">
+              ${r.candidate||""}
+              ${isElected?`<span class="chip-electo">✓ Electo (D’Hondt)</span>`:""}
+            </div>
+            <div><span class="party-badge" style="background:${color};">${r.party||"—"}</span></div>
+          </div>
+        </div>
+        <div class="stats-side">
+          ${r.votes?formatInt(r.votes):"—"}
+          <div class="bar-group">
+            <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
+            <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  // “Voto nulo / blanco” SIEMPRE antes del total (sin entrar en D’Hondt)
+  if (blanco){
+    const color = colorForRow(blanco);
+    const pct = Math.max(0, Math.min(100, Number(blanco.percent)||0));
+    rowsDiv.innerHTML += `
+      <div class="row">
+        <div class="name-side">
+          <div style="font-weight:500;">${blanco.candidate}</div>
+          <div><span class="party-badge" style="background:${color};">${blanco.party||"—"}</span></div>
+        </div>
+        <div class="stats-side">
+          ${blanco.votes?formatInt(blanco.votes):"—"}
+          <div class="bar-group">
+            <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
+            <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Total
+  document.getElementById("totalVotes").textContent = total?formatInt(total):"—";
+  document.getElementById("ts").textContent = "Actualizado: " + nowStamp();
+
+  // Resumen de escaños por LISTA (pacto)
+  const seatsDiv=document.getElementById("seats");
+  seatsDiv.innerHTML="";
+  if (Object.keys(partySeats).length===0){
+    seatsDiv.textContent = "Sin asignación de escaños (no hay votos).";
+  }else{
+    seatsDiv.innerHTML = `<div style="font-weight:700;">D’Hondt (5 escaños):</div>`;
+    Object.keys(partySeats).sort((a,b)=> (partySeats[b]||0)-(partySeats[a]||0) || (a>b?1:-1))
+      .forEach(p=>{
+        const c = candidateColorMap[p] || "#6b7280";
+        seatsDiv.innerHTML += `
+          <span class="seat-pill">
+            <span class="seat-dot" style="background:${c};"></span>
+            <span><b>${p}</b></span>
+            <span class="seat-count">${partySeats[p]}</span>
+          </span>`;
+      });
+  }
+}
+
+/* Carga y refresco */
+async function fetchCSV(url){
+  const res=await fetch(url+(url.includes("?")?"&":"?")+"t="+Date.now(),{cache:"no-store"});
+  if(!res.ok) throw new Error("No se pudo cargar CSV");
+  return await res.text();
+}
+async function load(){
+  try{
+    const text=await fetchCSV(DATA_URL);
+    const rows=parseCSV(text);
+
+    // Si deseas colores por pacto fijos, define aquí (opcional):
+    // setPartyColor("Pacto A", "#005CA9");
+    // setPartyColor("Pacto B", "#E5252A");
+    // setPartyColor("Pacto C", "#27AE60");
+
+    render(rows);
+    document.getElementById("footnote").textContent="Actualiza cada "+(REFRESH_MS/1000)+" s · Fuente: Google Sheets (CSV)";
+  }catch(e){
+    console.error(e);
+    document.getElementById("footnote").textContent="Error cargando CSV (revisa permisos o gid de la hoja).";
+  }
+}
+document.getElementById("refreshBtn").addEventListener("click",()=>{
+  const btn=document.getElementById("refreshBtn");
+  btn.textContent="⏳ Actualizando...";
+  load().then(()=>btn.textContent="🔄 Actualizar");
+});
+load();
+setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>
