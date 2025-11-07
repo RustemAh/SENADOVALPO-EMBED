@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Resultados Regional — Valparaíso 2025 (D’Hondt por Lista)</title>
+<title>Resultados Regional — Valparaíso 2025 (D’Hondt por Lista / Esquema por Partido)</title>
 <style>
 :root { color-scheme: light; }
 body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
@@ -59,7 +59,7 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
     </div>
   </div>
 
-  <div id="banner" class="banner">ASIGNACIÓN DE 5 ESCAÑOS — MÉTODO D’HONDT (por Lista)</div>
+  <div id="banner" class="banner">ASIGNACIÓN DE 5 ESCAÑOS — MÉTODO D’HONDT (por lista; mostrado por partido)</div>
 
   <div class="controls">
     <button id="toggleBtn" class="btn btn-secondary" title="Ver solo los posibles electos">👥 Ver posibles electos</button>
@@ -88,17 +88,17 @@ const REFRESH_MS=60000;
 
 let showElectedOnly=false;
 
-/* Colores (puedes fijar por lista o por party si quieres) */
+/* Colores (puedes fijar por lista o por party) */
 const colorMap={ "Voto nulo / blanco":"#999999" };
 function setColor(key, color){ if (key) colorMap[key]=color; }
 function colorForRow(r){
-  // Para colores puedes seguir usando código de lista internamente; en UI mostramos party.
+  // Color: prioridad candidato -> lista -> party
   return colorMap[candidateField(r)] || colorMap[listKey(r)] || colorMap[partyField(r)] || "#6b7280";
 }
 function formatInt(n){ return (n||0).toLocaleString("es-CL"); }
 function nowStamp(){ const d=new Date(); return d.toLocaleString("es-CL",{dateStyle:"medium",timeStyle:"short"}); }
 
-/* CSV simple */
+/* Parse helpers */
 function parseVotes(x){
   if (x==null) return 0;
   const s=String(x).trim(); if (!s) return 0;
@@ -113,12 +113,13 @@ function parseCSV(text){
     const obj={};
     headers.forEach((h,i)=>obj[h]=cols[i]||"");
     obj.votes=obj.votes?parseVotes(obj.votes):0;
+    // percent puede venir o no; se usa solo para ancho de barra (no se imprime)
     obj.percent=obj.percent?Number(String(obj.percent).replace(",", ".")):0;
     return obj;
   });
 }
 
-/* Helpers para campos variables */
+/* Field getters */
 function getField(r, names){
   for (const n of names){ if (r[n]!=null && String(r[n]).trim()!=="") return String(r[n]).trim(); }
   return "";
@@ -127,7 +128,7 @@ function candidateField(r){ return getField(r,["candidate","candidato","nombre"]
 function partyField(r){ return getField(r,["party","partido"]); }
 function listaField(r){ return getField(r,["lista","pacto","coalition","bloque","alianza","list","bloc"]); }
 
-/* Detectores */
+/* Type detectors */
 function isNullBlanco(r){ return (candidateField(r)||"").toLowerCase().includes("voto nulo"); }
 function isListHeader(r){
   const name=(candidateField(r)||"").toLowerCase();
@@ -136,24 +137,23 @@ function isListHeader(r){
   return name.startsWith("lista ") || name.includes(" lista ") || party.startsWith("lista ") || lista.startsWith("lista ");
 }
 
-/* Extraer código de lista (B/C/I/J/K) si viene como 'C. Unidad por Chile' */
+/* Lista key (para cálculo interno) */
 function extractListCodeFromText(s){
   const m = String(s||"").trim().match(/^([A-ZÁÉÍÓÚÑ])\./);
   return m? m[1].toUpperCase() : "";
 }
 function listKey(r){
-  // Usado SOLO para el cálculo interno — no se muestra en UI
   const lista = listaField(r);
   const code = extractListCodeFromText(lista);
-  if (code) return code;          // "C"
-  if (lista) return lista;        // nombre completo de la lista
+  if (code) return code;
+  if (lista) return lista;
   const party = partyField(r);
   const codeFromParty = extractListCodeFromText(party);
   if (codeFromParty) return codeFromParty;
   return party || "";
 }
 
-/* D’Hondt exacto por LISTA: V/1..V/SEATS con votos sumados por 'lista' */
+/* D’Hondt por lista (agrupa por 'lista') */
 function dhondtAllocate(rows, SEATS){
   const valid = rows.filter(r=> !isNullBlanco(r) && !isListHeader(r) && listKey(r));
   const byList = {};
@@ -188,7 +188,21 @@ function dhondtAllocate(rows, SEATS){
   return { listSeats, seatWinners };
 }
 
-/* Render con toggle de electos (UI muestra SOLO party) */
+/* Build seats by PARTY (from winners) */
+function seatsByParty(rows, seatWinners){
+  const candidates = rows.filter(r=> !isNullBlanco(r) && !isListHeader(r));
+  const partyCounts = {};
+  candidates.forEach(r=>{
+    const name = candidateField(r);
+    if (seatWinners.includes(name)){
+      const p = partyField(r) || "—";
+      partyCounts[p] = (partyCounts[p] || 0) + 1;
+    }
+  });
+  return partyCounts;
+}
+
+/* Render (sin mostrar porcentajes numéricos) */
 function render(rows){
   const blanco=rows.find(isNullBlanco);
   const candidates=rows.filter(r=>!isNullBlanco(r) && !isListHeader(r));
@@ -196,6 +210,7 @@ function render(rows){
 
   const SEATS=5;
   const { listSeats, seatWinners } = dhondtAllocate(rows, SEATS);
+  const partySeatCounts = seatsByParty(rows, seatWinners);
 
   const rowsDiv=document.getElementById("rows");
   rowsDiv.innerHTML="";
@@ -228,7 +243,6 @@ function render(rows){
             ${r.votes?formatInt(r.votes):"—"}
             <div class="bar-group">
               <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
-              <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
             </div>
           </div>
         </div>`;
@@ -239,7 +253,6 @@ function render(rows){
       if (isNullBlanco(r)) return;
 
       if (isListHeader(r)) {
-        // Encabezado visual "Lista ..." (se mantiene como separador, no muestra ningún valor de columna)
         rowsDiv.innerHTML += `
           <div class="row list-header">
             <div class="name-side">${candidateField(r) || "Lista"}</div>
@@ -268,7 +281,6 @@ function render(rows){
             ${r.votes?formatInt(r.votes):"—"}
             <div class="bar-group">
               <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
-              <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
             </div>
           </div>
         </div>`;
@@ -287,7 +299,6 @@ function render(rows){
             ${blanco.votes?formatInt(blanco.votes):"—"}
             <div class="bar-group">
               <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
-              <div style="font-weight:600;min-width:40px;">${pct>0?pct.toFixed(1)+"%":"—"}</div>
             </div>
           </div>
         </div>`;
@@ -299,21 +310,22 @@ function render(rows){
   document.getElementById("ts").textContent=stamp;
   document.getElementById("tsBottom").textContent=stamp;
 
-  // Resumen de escaños por LISTA (no imprime la columna 'lista' en filas; aquí es correcto mostrar la clave de lista)
+  // Resumen por PARTIDO (a partir de los electos)
   const seatsDiv=document.getElementById("seats");
   seatsDiv.innerHTML="";
-  if (Object.keys(listSeats).length===0){
+  const parties=Object.keys(partySeatCounts);
+  if (parties.length===0){
     seatsDiv.textContent="Sin asignación de escaños (no hay votos).";
   }else{
-    seatsDiv.innerHTML=`<div style="font-weight:700;">D’Hondt (5 escaños):</div>`;
-    Object.keys(listSeats).sort((a,b)=> (listSeats[b]||0)-(listSeats[a]||0) || (a>b?1:-1))
-      .forEach(L=>{
-        const c=colorMap[L]||"#6b7280";
+    seatsDiv.innerHTML=`<div style="font-weight:700;">D’Hondt (5 escaños) — por partido</div>`;
+    parties.sort((a,b)=> (partySeatCounts[b]||0)-(partySeatCounts[a]||0) || (a>b?1:-1))
+      .forEach(p=>{
+        const c=colorMap[p]||"#6b7280";
         seatsDiv.innerHTML += `
           <span class="seat-pill">
             <span class="seat-dot" style="background:${c};"></span>
-            <span><b>${L}</b></span>
-            <span class="seat-count">${listSeats[L]}</span>
+            <span><b>${p}</b></span>
+            <span class="seat-count">${partySeatCounts[p]}</span>
           </span>`;
       });
   }
@@ -330,10 +342,10 @@ async function load(){
     const text=await fetchCSV(DATA_URL);
     const rows=parseCSV(text);
 
-    // (Opcional) Colores por lista o por party:
-    // setColor("C", "#005CA9"); setColor("J", "#E5252A"); setColor("K", "#27AE60");
-    // setColor("I", "#8E44AD"); setColor("B", "#7F8C8D");
-    // setColor("PC", "#D32F2F"); setColor("UDI", "#1565C0"); ...
+    // (Opcional) Colores por partido o lista:
+    // setColor("PC", "#D32F2F"); setColor("UDI", "#1565C0"); setColor("REP", "#000000");
+    // setColor("PDG", "#8E44AD");
+    // setColor("C", "#005CA9"); setColor("J", "#E5252A"); setColor("K", "#27AE60"); setColor("I", "#8E44AD"); setColor("B", "#7F8C8D");
 
     render(rows);
     document.getElementById("footnote").textContent="Actualiza cada "+(REFRESH_MS/1000)+" s · Fuente: Google Sheets (CSV)";
@@ -363,4 +375,3 @@ setInterval(load, REFRESH_MS);
 </script>
 </body>
 </html>
-
