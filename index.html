@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Resultados Senado — Valparaíso 2025 (D’Hondt por Lista / Esquema por Partido)</title>
+<title>Resultados Regional — Valparaíso 2025 (D’Hondt por Lista / Esquema por Partido)</title>
 <style>
 :root { color-scheme: light; }
 body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
@@ -34,7 +34,7 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
 .bar-rail { width:100%; max-width:120px; height:8px; background:#e5e7eb; border-radius:6px; overflow:hidden; }
 .bar-fill { height:8px; border-radius:6px; }
 
-.list-header { background:#f3f4f6; color:#374151; font-weight:700; }
+.list-header { background:#f9fafb; color:#111; font-weight:700; border-top:2px solid #ddd; }
 .list-header .stats-side { color:#9ca3af; }
 
 .seats-wrap { padding:10px 16px; border-top:1px solid #eee; font-size:13px; color:#333; display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
@@ -85,293 +85,131 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
 <script>
 const DATA_URL="https://docs.google.com/spreadsheets/d/1lFbOXepc2zPXOUIOhTRnP4q9Ry_oye_9zHJ1HX_9Njc/export?format=csv";
 const REFRESH_MS=60000;
-
 let showElectedOnly=false;
 
-/* Colores (puedes fijar por lista o por party) */
 const colorMap={ "Voto nulo / blanco":"#999999" };
-function setColor(key, color){ if (key) colorMap[key]=color; }
-function colorForRow(r){
-  // Color: prioridad candidato -> lista -> party
-  return colorMap[candidateField(r)] || colorMap[listKey(r)] || colorMap[partyField(r)] || "#6b7280";
-}
+function setColor(k,c){ if(k) colorMap[k]=c; }
+function colorForRow(r){ return colorMap[candidate(r)]||colorMap[listKey(r)]||colorMap[party(r)]||"#6b7280"; }
 function formatInt(n){ return (n||0).toLocaleString("es-CL"); }
-function nowStamp(){ const d=new Date(); return d.toLocaleString("es-CL",{dateStyle:"medium",timeStyle:"short"}); }
+function nowStamp(){ return new Date().toLocaleString("es-CL",{dateStyle:"medium",timeStyle:"short"}); }
 
-/* Parse helpers */
-function parseVotes(x){
-  if (x==null) return 0;
-  const s=String(x).trim(); if (!s) return 0;
-  const onlyDigits=s.replace(/[^\d]/g,"");
-  return onlyDigits? Number(onlyDigits) : 0;
-}
-function parseCSV(text){
-  const lines=text.trim().split(/\r?\n/);
-  const headers=lines.shift().split(",").map(h=>h.trim().toLowerCase());
-  return lines.filter(l=>l.trim().length>0).map(line=>{
-    const cols=line.split(",").map(c=>c.trim());
-    const obj={};
-    headers.forEach((h,i)=>obj[h]=cols[i]||"");
-    obj.votes=obj.votes?parseVotes(obj.votes):0;
-    // percent puede venir o no; se usa solo para ancho de barra (no se imprime)
-    obj.percent=obj.percent?Number(String(obj.percent).replace(",", ".")):0;
-    return obj;
+function parseVotes(x){ return +String(x||"0").replace(/[^\d]/g,"")||0; }
+function parseCSV(t){
+  const l=t.trim().split(/\r?\n/); const h=l.shift().split(",").map(s=>s.trim().toLowerCase());
+  return l.filter(x=>x.trim()).map(line=>{
+    const c=line.split(",").map(x=>x.trim()), o={};
+    h.forEach((hh,i)=>o[hh]=c[i]||"");
+    o.votes=parseVotes(o.votes); o.percent=o.percent?+String(o.percent).replace(","," .")||0:0;
+    return o;
   });
 }
 
-/* Field getters */
-function getField(r, names){
-  for (const n of names){ if (r[n]!=null && String(r[n]).trim()!=="") return String(r[n]).trim(); }
-  return "";
-}
-function candidateField(r){ return getField(r,["candidate","candidato","nombre"]); }
-function partyField(r){ return getField(r,["party","partido"]); }
-function listaField(r){ return getField(r,["lista","pacto","coalition","bloque","alianza","list","bloc"]); }
+function get(r,n){ for(const x of n) if(r[x]) return String(r[x]).trim(); return ""; }
+function candidate(r){return get(r,["candidate","candidato","nombre"]); }
+function party(r){return get(r,["party","partido"]); }
+function lista(r){return get(r,["lista","pacto","coalition","bloque","alianza","list","bloc"]); }
 
-/* Type detectors */
-function isNullBlanco(r){ return (candidateField(r)||"").toLowerCase().includes("voto nulo"); }
+function isNullBlanco(r){return (candidate(r)||"").toLowerCase().includes("voto nulo");}
 function isListHeader(r){
-  const name=(candidateField(r)||"").toLowerCase();
-  const party=(partyField(r)||"").toLowerCase();
-  const lista=(listaField(r)||"").toLowerCase();
-  return name.startsWith("lista ") || name.includes(" lista ") || party.startsWith("lista ") || lista.startsWith("lista ");
+  const n=(candidate(r)||"").toLowerCase(), p=(party(r)||"").toLowerCase(), l=(lista(r)||"").toLowerCase();
+  return n.startsWith("lista ")||n.includes(" lista ")||p.startsWith("lista ")||l.startsWith("lista ");
 }
 
-/* Lista key (para cálculo interno) */
-function extractListCodeFromText(s){
-  const m = String(s||"").trim().match(/^([A-ZÁÉÍÓÚÑ])\./);
-  return m? m[1].toUpperCase() : "";
-}
+function extractListCode(s){const m=String(s||"").trim().match(/^([A-ZÁÉÍÓÚÑ])\./);return m?m[1].toUpperCase():"";}
 function listKey(r){
-  const lista = listaField(r);
-  const code = extractListCodeFromText(lista);
-  if (code) return code;
-  if (lista) return lista;
-  const party = partyField(r);
-  const codeFromParty = extractListCodeFromText(party);
-  if (codeFromParty) return codeFromParty;
-  return party || "";
+  const l=lista(r), c=extractListCode(l); if(c)return c;
+  if(l)return l; const p=party(r), cp=extractListCode(p); if(cp)return cp;
+  return p||"";
 }
 
-/* D’Hondt por lista (agrupa por 'lista') */
-function dhondtAllocate(rows, SEATS){
-  const valid = rows.filter(r=> !isNullBlanco(r) && !isListHeader(r) && listKey(r));
-  const byList = {};
-  valid.forEach(r=>{
-    const L=listKey(r);
-    byList[L]=(byList[L]||0)+(r.votes||0);
-  });
-
-  const lists=Object.keys(byList);
-  const totalVotesAll=lists.reduce((a,l)=>a+byList[l],0);
-  if (totalVotesAll===0) return { listSeats:{}, seatWinners:[] };
-
-  const quotients=[];
-  lists.forEach(L=>{
-    const V=byList[L];
-    for(let k=1;k<=SEATS;k++){ quotients.push({list:L,k,q:V/k,baseVotes:V}); }
-  });
-  quotients.sort((a,b)=> b.q - a.q || b.baseVotes - a.baseVotes || (a.list>b.list?1:-1));
-  const top=quotients.slice(0,SEATS);
-
-  const listSeats={};
-  top.forEach(x=>{ listSeats[x.list]=(listSeats[x.list]||0)+1; });
-
-  const seatWinners=[];
-  Object.keys(listSeats).forEach(L=>{
-    const n=listSeats[L];
-    const inList = valid.filter(r=> listKey(r)===L );
-    inList.sort((a,b)=>(b.votes||0)-(a.votes||0) || (b.percent||0)-(a.percent||0));
-    inList.slice(0,n).forEach(r=> seatWinners.push(candidateField(r)));
-  });
-
-  return { listSeats, seatWinners };
+/* D’Hondt */
+function dhondt(rows,S){
+  const valid=rows.filter(r=>!isNullBlanco(r)&&!isListHeader(r)&&listKey(r));
+  const byList={}; valid.forEach(r=>byList[listKey(r)]=(byList[listKey(r)]||0)+(r.votes||0));
+  const lists=Object.keys(byList); const q=[];
+  lists.forEach(L=>{for(let k=1;k<=S;k++)q.push({L,q:byList[L]/k});});
+  q.sort((a,b)=>b.q-a.q); const top=q.slice(0,S);
+  const seats={}; top.forEach(x=>seats[x.L]=(seats[x.L]||0)+1);
+  const winners=[];
+  for(const L in seats){
+    const n=seats[L];
+    const arr=valid.filter(r=>listKey(r)===L).sort((a,b)=>(b.votes||0)-(a.votes||0));
+    arr.slice(0,n).forEach(r=>winners.push(candidate(r)));
+  }
+  return {seats,winners};
 }
 
-/* Build seats by PARTY (from winners) */
-function seatsByParty(rows, seatWinners){
-  const candidates = rows.filter(r=> !isNullBlanco(r) && !isListHeader(r));
-  const partyCounts = {};
-  candidates.forEach(r=>{
-    const name = candidateField(r);
-    if (seatWinners.includes(name)){
-      const p = partyField(r) || "—";
-      partyCounts[p] = (partyCounts[p] || 0) + 1;
+function seatsByParty(rows,winners){
+  const counts={};
+  rows.forEach(r=>{
+    if(winners.includes(candidate(r))){
+      const p=party(r)||"—";
+      counts[p]=(counts[p]||0)+1;
     }
   });
-  return partyCounts;
+  return counts;
 }
 
-/* Render (sin mostrar porcentajes numéricos) */
+/* Render */
 function render(rows){
   const blanco=rows.find(isNullBlanco);
-  const candidates=rows.filter(r=>!isNullBlanco(r) && !isListHeader(r));
-  const allZero=candidates.length>0 && candidates.every(r=>(+r.votes||0)===0 && (+r.percent||0)===0);
+  const cand=rows.filter(r=>!isNullBlanco(r)&&!isListHeader(r));
+  const allZero=cand.length>0&&cand.every(r=>(r.votes||0)===0);
+  const S=5; const {seats,winners}=dhondt(rows,S); const pSeats=seatsByParty(rows,winners);
+  const rowsDiv=document.getElementById("rows"); rowsDiv.innerHTML="";
+  let total=0; document.getElementById("banner").style.display=allZero?"none":"block";
 
-  const SEATS=5;
-  const { listSeats, seatWinners } = dhondtAllocate(rows, SEATS);
-  const partySeatCounts = seatsByParty(rows, seatWinners);
+  const renderRow=(r,elected=false)=>{
+    const color=colorForRow(r); const pct=Math.max(0,Math.min(100,+r.percent||0));
+    const photo=r.photo?`<img src="${r.photo}" class="photo" alt="">`:"";
+    rowsDiv.innerHTML+=`
+      <div class="row${elected?" winner":""}">
+        <div class="name-side">${photo}
+          <div><div style="font-weight:${elected?"700":"500"};">${candidate(r)}${elected?'<span class="chip-electo">✓ Electo (D’Hondt)</span>':""}</div>
+          <div><span class="party-badge" style="background:${color};">${party(r)||"—"}</span></div></div>
+        </div>
+        <div class="stats-side">${r.votes?formatInt(r.votes):"—"}
+          <div class="bar-group"><div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div></div>
+        </div>
+      </div>`;}
 
-  const rowsDiv=document.getElementById("rows");
-  rowsDiv.innerHTML="";
-  let total=0;
-
-  document.getElementById("banner").style.display = allZero ? "none" : "block";
-
-  if (showElectedOnly){
-    const electedRows=candidates
-      .filter(r=> seatWinners.includes(candidateField(r)))
-      .sort((a,b)=>(b.votes||0)-(a.votes||0) || (b.percent||0)-(a.percent||0));
-
-    electedRows.forEach(r=>{
-      total += (r.votes||0);
-      const color=colorForRow(r);
-      const pct=Math.max(0,Math.min(100,Number(r.percent)||0));
-      const photo=r.photo?`<img src="${r.photo}" alt="${candidateField(r)}" class="photo"/>`:"";
-      rowsDiv.innerHTML += `
-        <div class="row winner">
-          <div class="name-side">
-            ${photo}
-            <div>
-              <div style="font-weight:700;">
-                ${candidateField(r)}<span class="chip-electo">✓ Electo (D’Hondt)</span>
-              </div>
-              <div><span class="party-badge" style="background:${color};">${partyField(r) || "—"}</span></div>
-            </div>
-          </div>
-          <div class="stats-side">
-            ${r.votes?formatInt(r.votes):"—"}
-            <div class="bar-group">
-              <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
-            </div>
-          </div>
-        </div>`;
-    });
-
-  } else {
+  if(showElectedOnly){
+    cand.filter(r=>winners.includes(candidate(r)))
+      .sort((a,b)=>(b.votes||0)-(a.votes||0))
+      .forEach(r=>{total+=r.votes;renderRow(r,true);});
+  }else{
     rows.forEach(r=>{
-      if (isNullBlanco(r)) return;
-
-      if (isListHeader(r)) {
-        rowsDiv.innerHTML += `
+      if(isNullBlanco(r))return;
+      if(isListHeader(r)){
+        const name=(candidate(r)||"Lista").replace(/^"+|"+$/g,"").replace(/^“|”$/g,"").trim();
+        rowsDiv.innerHTML+=`
           <div class="row list-header">
-            <div class="name-side">${candidateField(r) || "Lista"}</div>
+            <div class="name-side"><div style="font-weight:700;font-size:15px;color:#111;">${name}</div></div>
             <div class="stats-side"></div>
           </div>`;
         return;
       }
-
-      const color=colorForRow(r);
-      const pct=Math.max(0,Math.min(100,Number(r.percent)||0));
-      const elected = !allZero && seatWinners.includes(candidateField(r));
-      total += (r.votes||0);
-      const photo=r.photo?`<img src="${r.photo}" alt="${candidateField(r)}" class="photo"/>`:"";
-      rowsDiv.innerHTML += `
-        <div class="row${elected?" winner":""}">
-          <div class="name-side">
-            ${photo}
-            <div>
-              <div style="font-weight:${elected?"700":"500"};">
-                ${candidateField(r)}${elected?`<span class="chip-electo">✓ Electo (D’Hondt)</span>`:""}
-              </div>
-              <div><span class="party-badge" style="background:${color};">${partyField(r) || "—"}</span></div>
-            </div>
-          </div>
-          <div class="stats-side">
-            ${r.votes?formatInt(r.votes):"—"}
-            <div class="bar-group">
-              <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
-            </div>
-          </div>
-        </div>`;
+      const elected=!allZero&&winners.includes(candidate(r)); total+=r.votes; renderRow(r,elected);
     });
-
-    if (blanco){
-      const color=colorForRow(blanco);
-      const pct=Math.max(0,Math.min(100,Number(blanco.percent)||0));
-      rowsDiv.innerHTML += `
-        <div class="row">
-          <div class="name-side">
-            <div style="font-weight:500;">${candidateField(blanco)||"Voto nulo / blanco"}</div>
-            <div><span class="party-badge" style="background:${color};">${partyField(blanco) || "—"}</span></div>
-          </div>
-          <div class="stats-side">
-            ${blanco.votes?formatInt(blanco.votes):"—"}
-            <div class="bar-group">
-              <div class="bar-rail"><div class="bar-fill" style="width:${pct}%;background:${color};"></div></div>
-            </div>
-          </div>
-        </div>`;
-    }
+    if(blanco)renderRow(blanco,false);
   }
 
-  document.getElementById("totalVotes").textContent = total?formatInt(total):"—";
-  const stamp="Actualizado: "+nowStamp();
-  document.getElementById("ts").textContent=stamp;
-  document.getElementById("tsBottom").textContent=stamp;
+  document.getElementById("totalVotes").textContent=total?formatInt(total):"—";
+  const s="Actualizado: "+nowStamp(); document.getElementById("ts").textContent=s; document.getElementById("tsBottom").textContent=s;
 
-  // Resumen por PARTIDO (a partir de los electos)
-  const seatsDiv=document.getElementById("seats");
-  seatsDiv.innerHTML="";
-  const parties=Object.keys(partySeatCounts);
-  if (parties.length===0){
-    seatsDiv.textContent="Sin asignación de escaños (no hay votos).";
-  }else{
-    seatsDiv.innerHTML=`<div style="font-weight:700;">D’Hondt (5 escaños) — por partido</div>`;
-    parties.sort((a,b)=> (partySeatCounts[b]||0)-(partySeatCounts[a]||0) || (a>b?1:-1))
-      .forEach(p=>{
-        const c=colorMap[p]||"#6b7280";
-        seatsDiv.innerHTML += `
-          <span class="seat-pill">
-            <span class="seat-dot" style="background:${c};"></span>
-            <span><b>${p}</b></span>
-            <span class="seat-count">${partySeatCounts[p]}</span>
-          </span>`;
-      });
+  const seatsDiv=document.getElementById("seats"); seatsDiv.innerHTML="";
+  const parties=Object.keys(pSeats);
+  if(!parties.length){seatsDiv.textContent="Sin asignación de escaños (no hay votos).";}
+  else{
+    seatsDiv.innerHTML="<div style='font-weight:700;'>D’Hondt (5 escaños) — por partido</div>";
+    parties.sort((a,b)=>(pSeats[b]||0)-(pSeats[a]||0)).forEach(p=>{
+      const c=colorMap[p]||"#6b7280";
+      seatsDiv.innerHTML+=`<span class="seat-pill"><span class="seat-dot" style="background:${c};"></span><span><b>${p}</b></span><span class="seat-count">${pSeats[p]}</span></span>`;
+    });
   }
 }
 
-/* Fetch & refresco */
-async function fetchCSV(url){
-  const res=await fetch(url+(url.includes("?")?"&":"?")+"t="+Date.now(),{cache:"no-store"});
-  if(!res.ok) throw new Error("No se pudo cargar CSV");
-  return await res.text();
-}
-async function load(){
-  try{
-    const text=await fetchCSV(DATA_URL);
-    const rows=parseCSV(text);
+async function fetchCSV(u){const r=await fetch(u+(u.includes("?")?"&":"?")+"t="+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error("No CSV");return await r.text();}
+async function load(){try{const t=await fetchCSV(DATA_URL);const rows=parseCSV(t);render(rows);}catch(e){console.error(e);document.getElementById("footnote").textContent="Error cargando CSV";}}
 
-    // (Opcional) Colores por partido o lista:
-    // setColor("PC", "#D32F2F"); setColor("UDI", "#1565C0"); setColor("REP", "#000000");
-    // setColor("PDG", "#8E44AD");
-    // setColor("C", "#005CA9"); setColor("J", "#E5252A"); setColor("K", "#27AE60"); setColor("I", "#8E44AD"); setColor("B", "#7F8C8D");
-
-    render(rows);
-    document.getElementById("footnote").textContent="Actualiza cada "+(REFRESH_MS/1000)+" s · Fuente: Google Sheets (CSV)";
-  }catch(e){
-    console.error(e);
-    document.getElementById("footnote").textContent="Error cargando CSV (revisa permisos o gid de la hoja).";
-  }
-}
-
-/* Botones */
-document.getElementById("refreshBtn").addEventListener("click",()=>{
-  const btn=document.getElementById("refreshBtn");
-  const tb=document.getElementById("toggleBtn");
-  btn.textContent="⏳ Actualizando...";
-  btn.disabled=true; tb.disabled=true;
-  load().then(()=>{ btn.textContent="🔄 Actualizar"; btn.disabled=false; tb.disabled=false; });
-});
-document.getElementById("toggleBtn").addEventListener("click",()=>{
-  showElectedOnly=!showElectedOnly;
-  const tb=document.getElementById("toggleBtn");
-  tb.textContent = showElectedOnly ? "🔙 Volver a ver todas las listas" : "👥 Ver posibles electos";
-  fetchCSV(DATA_URL).then(parseCSV).then(rows=>render(rows)).catch(()=>{});
-});
-
-load();
-setInterval(load, REFRESH_MS);
-</script>
-</body>
-</html>
+document.getElementById("refreshBtn").addEventListener("click",()=>{const b=document.getElementById("refreshBtn"),tb=document.getElementById("toggleBtn");b.textContent="⏳ Actualizando...";b.disabled=tb.disabled=true;load().then(()=>{b.textContent="🔄
