@@ -88,10 +88,13 @@ const REFRESH_MS=60000;
 
 let showElectedOnly=false;
 
-/* Colores por lista/candidato (opcional) */
+/* Colores (puedes fijar por lista o por party si quieres) */
 const colorMap={ "Voto nulo / blanco":"#999999" };
 function setColor(key, color){ if (key) colorMap[key]=color; }
-function colorForRow(r){ return colorMap[candidateField(r)] || colorMap[listKey(r)] || colorMap[partyField(r)] || "#6b7280"; }
+function colorForRow(r){
+  // Para colores puedes seguir usando código de lista internamente; en UI mostramos party.
+  return colorMap[candidateField(r)] || colorMap[listKey(r)] || colorMap[partyField(r)] || "#6b7280";
+}
 function formatInt(n){ return (n||0).toLocaleString("es-CL"); }
 function nowStamp(){ const d=new Date(); return d.toLocaleString("es-CL",{dateStyle:"medium",timeStyle:"short"}); }
 
@@ -125,9 +128,7 @@ function partyField(r){ return getField(r,["party","partido"]); }
 function listaField(r){ return getField(r,["lista","pacto","coalition","bloque","alianza","list","bloc"]); }
 
 /* Detectores */
-function isNullBlanco(r){
-  return (candidateField(r)||"").toLowerCase().includes("voto nulo");
-}
+function isNullBlanco(r){ return (candidateField(r)||"").toLowerCase().includes("voto nulo"); }
 function isListHeader(r){
   const name=(candidateField(r)||"").toLowerCase();
   const party=(partyField(r)||"").toLowerCase();
@@ -141,6 +142,7 @@ function extractListCodeFromText(s){
   return m? m[1].toUpperCase() : "";
 }
 function listKey(r){
+  // Usado SOLO para el cálculo interno — no se muestra en UI
   const lista = listaField(r);
   const code = extractListCodeFromText(lista);
   if (code) return code;          // "C"
@@ -186,7 +188,7 @@ function dhondtAllocate(rows, SEATS){
   return { listSeats, seatWinners };
 }
 
-/* Render con toggle de electos */
+/* Render con toggle de electos (UI muestra SOLO party) */
 function render(rows){
   const blanco=rows.find(isNullBlanco);
   const candidates=rows.filter(r=>!isNullBlanco(r) && !isListHeader(r));
@@ -219,7 +221,7 @@ function render(rows){
               <div style="font-weight:700;">
                 ${candidateField(r)}<span class="chip-electo">✓ Electo (D’Hondt)</span>
               </div>
-              <div><span class="party-badge" style="background:${color};">${listKey(r) || listaField(r) || partyField(r) || "—"}</span></div>
+              <div><span class="party-badge" style="background:${color};">${partyField(r) || "—"}</span></div>
             </div>
           </div>
           <div class="stats-side">
@@ -237,10 +239,11 @@ function render(rows){
       if (isNullBlanco(r)) return;
 
       if (isListHeader(r)) {
+        // Encabezado visual "Lista ..." (se mantiene como separador, no muestra ningún valor de columna)
         rowsDiv.innerHTML += `
           <div class="row list-header">
-            <div class="name-side">${candidateField(r) || listaField(r) || "Lista"}</div>
-            <div class="stats-side">${listaField(r) || partyField(r) || ""}</div>
+            <div class="name-side">${candidateField(r) || "Lista"}</div>
+            <div class="stats-side"></div>
           </div>`;
         return;
       }
@@ -258,7 +261,7 @@ function render(rows){
               <div style="font-weight:${elected?"700":"500"};">
                 ${candidateField(r)}${elected?`<span class="chip-electo">✓ Electo (D’Hondt)</span>`:""}
               </div>
-              <div><span class="party-badge" style="background:${color};">${listKey(r) || listaField(r) || partyField(r) || "—"}</span></div>
+              <div><span class="party-badge" style="background:${color};">${partyField(r) || "—"}</span></div>
             </div>
           </div>
           <div class="stats-side">
@@ -278,7 +281,7 @@ function render(rows){
         <div class="row">
           <div class="name-side">
             <div style="font-weight:500;">${candidateField(blanco)||"Voto nulo / blanco"}</div>
-            <div><span class="party-badge" style="background:${color};">${listKey(blanco) || partyField(blanco) || "—"}</span></div>
+            <div><span class="party-badge" style="background:${color};">${partyField(blanco) || "—"}</span></div>
           </div>
           <div class="stats-side">
             ${blanco.votes?formatInt(blanco.votes):"—"}
@@ -296,6 +299,7 @@ function render(rows){
   document.getElementById("ts").textContent=stamp;
   document.getElementById("tsBottom").textContent=stamp;
 
+  // Resumen de escaños por LISTA (no imprime la columna 'lista' en filas; aquí es correcto mostrar la clave de lista)
   const seatsDiv=document.getElementById("seats");
   seatsDiv.innerHTML="";
   if (Object.keys(listSeats).length===0){
@@ -326,9 +330,10 @@ async function load(){
     const text=await fetchCSV(DATA_URL);
     const rows=parseCSV(text);
 
-    // (Opcional) Colores por lista:
+    // (Opcional) Colores por lista o por party:
     // setColor("C", "#005CA9"); setColor("J", "#E5252A"); setColor("K", "#27AE60");
     // setColor("I", "#8E44AD"); setColor("B", "#7F8C8D");
+    // setColor("PC", "#D32F2F"); setColor("UDI", "#1565C0"); ...
 
     render(rows);
     document.getElementById("footnote").textContent="Actualiza cada "+(REFRESH_MS/1000)+" s · Fuente: Google Sheets (CSV)";
@@ -358,5 +363,4 @@ setInterval(load, REFRESH_MS);
 </script>
 </body>
 </html>
-
 
