@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Resultados Regional — Valparaíso 2025 (D’Hondt por Lista / Esquema por Partido)</title>
+<title>Resultados Regional — Valparaíso 2025</title>
 <style>
 :root { color-scheme: light; }
 body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
@@ -62,9 +62,9 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
   <div id="banner" class="banner">ASIGNACIÓN DE 5 ESCAÑOS — MÉTODO D’HONDT (por lista; mostrado por partido)</div>
 
   <div class="controls">
-    <button id="toggleBtn" class="btn btn-secondary" title="Ver solo los posibles electos">👥 Ver posibles electos</button>
-    <button id="refreshBtn" class="btn" title="Actualizar ahora">🔄 Actualizar</button>
-    <span id="hint" style="font-size:12px; color:#6b7280;">Electos ordenados por mayor votación individual</span>
+    <button id="toggleBtn" class="btn btn-secondary">👥 Ver posibles electos</button>
+    <button id="refreshBtn" class="btn">🔄 Actualizar</button>
+    <span style="font-size:12px;color:#6b7280;">Electos ordenados por mayor votación individual</span>
   </div>
 
   <div id="rows"></div>
@@ -74,7 +74,7 @@ body { margin:0; font-family: Arial, Roboto, sans-serif; background:#fff; }
     <div id="totalVotes" style="font-weight:600;">—</div>
   </div>
 
-  <div id="seats" class="seats-wrap" aria-live="polite"></div>
+  <div id="seats" class="seats-wrap"></div>
 
   <div class="note">
     <div id="footnote">Actualiza cada 60 s · Fuente: Google Sheets</div>
@@ -122,12 +122,10 @@ function listKey(r){
   return p||"";
 }
 
-/* D’Hondt */
 function dhondt(rows,S){
   const valid=rows.filter(r=>!isNullBlanco(r)&&!isListHeader(r)&&listKey(r));
   const byList={}; valid.forEach(r=>byList[listKey(r)]=(byList[listKey(r)]||0)+(r.votes||0));
-  const lists=Object.keys(byList); const q=[];
-  lists.forEach(L=>{for(let k=1;k<=S;k++)q.push({L,q:byList[L]/k});});
+  const q=[]; Object.keys(byList).forEach(L=>{for(let k=1;k<=S;k++)q.push({L,q:byList[L]/k});});
   q.sort((a,b)=>b.q-a.q); const top=q.slice(0,S);
   const seats={}; top.forEach(x=>seats[x.L]=(seats[x.L]||0)+1);
   const winners=[];
@@ -150,22 +148,22 @@ function seatsByParty(rows,winners){
   return counts;
 }
 
-/* Render */
 function render(rows){
   const blanco=rows.find(isNullBlanco);
   const cand=rows.filter(r=>!isNullBlanco(r)&&!isListHeader(r));
   const allZero=cand.length>0&&cand.every(r=>(r.votes||0)===0);
-  const S=5; const {seats,winners}=dhondt(rows,S); const pSeats=seatsByParty(rows,winners);
+  const {seats,winners}=dhondt(rows,5);
+  const pSeats=seatsByParty(rows,winners);
   const rowsDiv=document.getElementById("rows"); rowsDiv.innerHTML="";
-  let total=0; document.getElementById("banner").style.display=allZero?"none":"block";
+  let total=0;
 
-  const renderRow=(r,elected=false)=>{
+  const renderRow=(r,elect=false)=>{
     const color=colorForRow(r); const pct=Math.max(0,Math.min(100,+r.percent||0));
-    const photo=r.photo?`<img src="${r.photo}" class="photo" alt="">`:"";
+    const photo=r.photo?`<img src="${r.photo}" class="photo">`:"";
     rowsDiv.innerHTML+=`
-      <div class="row${elected?" winner":""}">
+      <div class="row${elect?" winner":""}">
         <div class="name-side">${photo}
-          <div><div style="font-weight:${elected?"700":"500"};">${candidate(r)}${elected?'<span class="chip-electo">✓ Electo (D’Hondt)</span>':""}</div>
+          <div><div style="font-weight:${elect?"700":"500"};">${candidate(r)}${elect?'<span class="chip-electo">✓ Electo (D’Hondt)</span>':""}</div>
           <div><span class="party-badge" style="background:${color};">${party(r)||"—"}</span></div></div>
         </div>
         <div class="stats-side">${r.votes?formatInt(r.votes):"—"}
@@ -173,50 +171,49 @@ function render(rows){
         </div>
       </div>`;}
 
-  if(showElectedOnly){
-    cand.filter(r=>winners.includes(candidate(r)))
-      .sort((a,b)=>(b.votes||0)-(a.votes||0))
-      .forEach(r=>{total+=r.votes;renderRow(r,true);});
-  }else{
-    rows.forEach(r=>{
-      if(isNullBlanco(r))return;
-      if(isListHeader(r)){
-        const name=(candidate(r)||"Lista").replace(/^"+|"+$/g,"").replace(/^“|”$/g,"").trim();
-        rowsDiv.innerHTML+=`
-          <div class="row list-header">
-            <div class="name-side"><div style="font-weight:700;font-size:15px;color:#111;">${name}</div></div>
-            <div class="stats-side"></div>
-          </div>`;
-        return;
-      }
-      const elected=!allZero&&winners.includes(candidate(r)); total+=r.votes; renderRow(r,elected);
-    });
-    if(blanco)renderRow(blanco,false);
-  }
+  rows.forEach(r=>{
+    if(isNullBlanco(r))return;
+    if(isListHeader(r)){
+      const name=(candidate(r)||"Lista")
+        .replace(/^["“”']+|["“”']+$/g,"")  // elimina cualquier tipo de comillas
+        .trim();
+      rowsDiv.innerHTML+=`
+        <div class="row list-header">
+          <div class="name-side"><div style="font-weight:700;font-size:15px;color:#111;">${name}</div></div>
+          <div class="stats-side"></div>
+        </div>`;
+      return;
+    }
+    const elected=!allZero&&winners.includes(candidate(r)); total+=r.votes; renderRow(r,elected);
+  });
+  if(blanco)renderRow(blanco,false);
 
   document.getElementById("totalVotes").textContent=total?formatInt(total):"—";
-  const s="Actualizado: "+nowStamp(); document.getElementById("ts").textContent=s; document.getElementById("tsBottom").textContent=s;
+  const s="Actualizado: "+nowStamp();
+  document.getElementById("ts").textContent=s;
+  document.getElementById("tsBottom").textContent=s;
 
   const seatsDiv=document.getElementById("seats"); seatsDiv.innerHTML="";
   const parties=Object.keys(pSeats);
-  if(!parties.length){seatsDiv.textContent="Sin asignación de escaños (no hay votos).";}
+  if(!parties.length){seatsDiv.textContent="Sin asignación de escaños.";}
   else{
     seatsDiv.innerHTML="<div style='font-weight:700;'>D’Hondt (5 escaños) — por partido</div>";
     parties.sort((a,b)=>(pSeats[b]||0)-(pSeats[a]||0)).forEach(p=>{
       const c=colorMap[p]||"#6b7280";
-      seatsDiv.innerHTML+=`<span class="seat-pill"><span class="seat-dot" style="background:${c};"></span><span><b>${p}</b></span><span class="seat-count">${pSeats[p]}</span></span>`;
+      seatsDiv.innerHTML+=`<span class="seat-pill"><span class="seat-dot" style="background:${c};"></span><b>${p}</b><span class="seat-count">${pSeats[p]}</span></span>`;
     });
   }
 }
 
 async function fetchCSV(u){const r=await fetch(u+(u.includes("?")?"&":"?")+"t="+Date.now(),{cache:"no-store"});if(!r.ok)throw new Error("No CSV");return await r.text();}
-async function load(){try{const t=await fetchCSV(DATA_URL);const rows=parseCSV(t);render(rows);}catch(e){console.error(e);document.getElementById("footnote").textContent="Error cargando CSV";}}
+async function load(){const t=await fetchCSV(DATA_URL);render(parseCSV(t));}
 
-document.getElementById("refreshBtn").addEventListener("click",()=>{const b=document.getElementById("refreshBtn"),tb=document.getElementById("toggleBtn");b.textContent="⏳ Actualizando...";b.disabled=tb.disabled=true;load().then(()=>{b.textContent="🔄 Actualizar";b.disabled=tb.disabled=false;});});
-document.getElementById("toggleBtn").addEventListener("click",()=>{showElectedOnly=!showElectedOnly;document.getElementById("toggleBtn").textContent=showElectedOnly?"🔙 Volver a ver todas las listas":"👥 Ver posibles electos";load();});
+document.getElementById("refreshBtn").addEventListener("click",()=>{load();});
+document.getElementById("toggleBtn").addEventListener("click",()=>{showElectedOnly=!showElectedOnly;load();});
 
 load(); setInterval(load,REFRESH_MS);
 </script>
 </body>
 </html>
+
 
